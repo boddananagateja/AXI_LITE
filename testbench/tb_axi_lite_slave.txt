@@ -1,0 +1,152 @@
+`timescale 1ns / 1ps
+
+module tb_axi_lite_slave;
+
+  parameter ADDR_WIDTH = 32;
+  parameter DATA_WIDTH = 32;
+
+  // Clock & Reset
+  logic ACLK;
+  logic ARESETn;
+
+  // Read address channel
+  logic [ADDR_WIDTH-1:0] ARADDR;
+  logic ARVALID;
+  logic ARREADY;
+
+  // Read data channel
+  logic [DATA_WIDTH-1:0] RDATA;
+  logic [1:0] RRESP;
+  logic RVALID;
+  logic RREADY;
+
+  // Write address channel
+  logic [ADDR_WIDTH-1:0] AWADDR;
+  logic AWVALID;
+  logic AWREADY;
+
+  // Write data channel
+  logic [DATA_WIDTH-1:0] WDATA;
+  logic WVALID;
+  logic WREADY;
+
+  // Write response channel
+  logic [1:0] BRESP;
+  logic BVALID;
+  logic BREADY;
+
+  // DUT instantiation
+  axi_lite_slave dut (
+    .ACLK     (ACLK),
+    .ARESETn  (ARESETn),
+
+    .ARADDR   (ARADDR),
+    .ARVALID  (ARVALID),
+    .ARREADY  (ARREADY),
+
+    .RDATA    (RDATA),
+    .RRESP    (RRESP),
+    .RVALID   (RVALID),
+    .RREADY   (RREADY),
+
+    .AWADDR   (AWADDR),
+    .AWVALID  (AWVALID),
+    .AWREADY  (AWREADY),
+
+    .WDATA    (WDATA),
+    .WVALID   (WVALID),
+    .WREADY   (WREADY),
+
+    .BRESP    (BRESP),
+    .BVALID   (BVALID),
+    .BREADY   (BREADY)
+  );
+
+  // Clock generation (100 MHz)
+  always #5 ACLK = ~ACLK;
+
+  // -------------------------------
+  // AXI WRITE TASK
+  // -------------------------------
+  task axi_write(input [31:0] addr, input [31:0] data);
+    begin
+      // Address + Data
+      AWADDR  = addr;
+      AWVALID = 1;
+      WDATA   = data;
+      WVALID  = 1;
+      BREADY  = 1;
+
+      // Wait until accepted
+      wait (AWREADY && WREADY);
+      @(posedge ACLK);
+      AWVALID = 0;
+      WVALID  = 0;
+
+      // Wait for response
+      wait (BVALID);
+      $display("WRITE: Addr=0x%0h Data=0x%0h BRESP=%0d", addr, data, BRESP);
+      @(posedge ACLK);
+      BREADY = 0;
+    end
+  endtask
+
+  // -------------------------------
+  // AXI READ TASK
+  // -------------------------------
+  task axi_read(input [31:0] addr);
+    begin
+      ARADDR  = addr;
+      ARVALID = 1;
+      RREADY  = 1;
+
+      wait (ARREADY);
+      @(posedge ACLK);
+      ARVALID = 0;
+
+      wait (RVALID);
+      $display("READ : Addr=0x%0h Data=0x%0h RRESP=%0d", addr, RDATA, RRESP);
+      @(posedge ACLK);
+      RREADY = 0;
+    end
+  endtask
+
+  // -------------------------------
+  // TEST SEQUENCE
+  // -------------------------------
+  initial begin
+    // Init
+    ACLK     = 0;
+    ARESETn  = 0;
+
+    ARADDR   = 0;
+    ARVALID  = 0;
+    RREADY   = 0;
+
+    AWADDR   = 0;
+    AWVALID  = 0;
+    WDATA    = 0;
+    WVALID   = 0;
+    BREADY   = 0;
+
+    // Reset
+    #20;
+    ARESETn = 1;
+
+    // -------------------------------
+    // Write to registers
+    // -------------------------------
+    axi_write(32'h0000_0000, 32'hDEADBEEF); // regfile[0]
+    axi_write(32'h0000_0004, 32'h12345678); // regfile[1]
+
+    // -------------------------------
+    // Read back
+    // -------------------------------
+    axi_read(32'h0000_0000);
+    axi_read(32'h0000_0004);
+
+    #50;
+    $finish;
+  end
+
+endmodule
